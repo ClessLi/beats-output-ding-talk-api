@@ -1,11 +1,11 @@
-package http
+package output
 
 import (
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/crazygreenpenguin/beats-output-http/resolver"
+	"github.com/ClessLi/beats-output-ding-talk-api/resolver"
 	"github.com/elastic/beats/v7/libbeat/beat"
 	"github.com/elastic/beats/v7/libbeat/common"
 	"github.com/elastic/beats/v7/libbeat/logp"
@@ -25,10 +25,10 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 var dnsCache = resolver.NewDNSResolver()
 
 func init() {
-	outputs.RegisterType("http", makeHTTP)
+	outputs.RegisterType("ding_talk_api", makeDingTalkApi)
 }
 
-type httpOutput struct {
+type dingTalkApiOutput struct {
 	log       *logp.Logger
 	beat      beat.Info
 	observer  outputs.Observer
@@ -39,8 +39,8 @@ type httpOutput struct {
 	conf      config
 }
 
-// makeHTTP instantiates a new http output instance.
-func makeHTTP(
+// makeDingTalkApi instantiates a new dingTalk robot api output instance.
+func makeDingTalkApi(
 	_ outputs.IndexManager,
 	beat beat.Info,
 	observer outputs.Observer,
@@ -52,8 +52,8 @@ func makeHTTP(
 		return outputs.Fail(err)
 	}
 
-	ho := &httpOutput{
-		log:      logp.NewLogger("http"),
+	ho := &dingTalkApiOutput{
+		log:      logp.NewLogger("dingTalkApi"),
 		beat:     beat,
 		observer: observer,
 		conf:     config,
@@ -65,11 +65,15 @@ func makeHTTP(
 	}
 
 	//select serializer
-	ho.serialize = ho.serializeAll
-
-	if config.OnlyFields {
-		ho.serialize = ho.serializeOnlyFields
+	switch ho.conf.SendMsgType {
+	case TextMsgType:
+		ho.serialize = ho.serializeTextMsgType
 	}
+	//ho.serialize = ho.serializeAll
+
+	//if config.OnlyFields {
+	//	ho.serialize = ho.serializeOnlyFields
+	//}
 
 	// init output
 	if err := ho.init(beat, config); err != nil {
@@ -79,7 +83,7 @@ func makeHTTP(
 	return outputs.Success(-1, config.MaxRetries, ho)
 }
 
-func (out *httpOutput) init(beat beat.Info, c config) error {
+func (out *dingTalkApiOutput) init(beat beat.Info, c config) error {
 	var err error
 
 	out.codec, err = codec.CreateEncoder(beat, c.Codec)
@@ -127,57 +131,65 @@ func (out *httpOutput) init(beat beat.Info, c config) error {
 		},
 	}
 
-	out.log.Infof("Initialized http output:\n"+
+	out.log.Infof("Initialized dingTalk robot api output:\n"+
 		"url=%v\n"+
 		"codec=%v\n"+
-		"only_fields=%v\n"+
 		"max_retries=%v\n"+
 		"compression=%v\n"+
 		"keep_alive=%v\n"+
 		"max_idle_conns=%v\n"+
 		"idle_conn_timeout=%vs\n"+
 		"response_header_timeout=%vms\n"+
-		"username=%v\n"+
-		"password=%v\n",
-		c.URL, c.Codec, c.OnlyFields, c.MaxRetries, c.Compression,
+		"api_access_token=%v\n"+
+		"at=%v\n"+
+		"send_msg_type=%v\n",
+		c.URL, c.Codec, c.MaxRetries, c.Compression,
 		c.KeepAlive, c.MaxIdleConns, c.IdleConnTimeout, c.ResponseHeaderTimeout,
-		c.Username, maskPass(c.Password))
+		c.ApiAccessToken, c.At, c.SendMsgType)
 	return nil
 }
 
-func maskPass(password string) string {
-	result := ""
-	if len(password) <= 8 {
-		for i := 0; i < len(password); i++ {
-			result += "*"
-		}
-		return result
-	}
-
-	for i, char := range password {
-		if i > 1 && i < len(password)-2 {
-			result += "*"
-		} else {
-			result += string(char)
-		}
-	}
-
-	return result
-}
-
 // Implement Client
-func (out *httpOutput) Close() error {
+func (out *dingTalkApiOutput) Close() error {
 	out.client.CloseIdleConnections()
 	return nil
 }
 
-func (out *httpOutput) serializeOnlyFields(event *publisher.Event) ([]byte, error) {
-	fields := event.Content.Fields
-	fields["@timestamp"] = event.Content.Timestamp
-	for key, val := range out.conf.AddFields {
-		fields[key] = val
+//func (out *dingTalkApiOutput) serializeOnlyFields(event *publisher.Event) ([]byte, error) {
+//	fields := event.Content.Fields
+//	fields["@timestamp"] = event.Content.Timestamp
+//	for key, val := range out.conf.AddFields {
+//		fields[key] = val
+//	}
+//	serializedEvent, err := json.Marshal(&fields)
+//	if err != nil {
+//		out.log.Error("Serialization error: ", err)
+//		return make([]byte, 0), err
+//	}
+//	return serializedEvent, nil
+//}
+//
+//func (out *dingTalkApiOutput) serializeAll(event *publisher.Event) ([]byte, error) {
+//	serializedEvent, err := out.codec.Encode(out.beat.Beat, &event.Content)
+//	if err != nil {
+//		out.log.Error("Serialization error: ", err)
+//		return make([]byte, 0), err
+//	}
+//	return serializedEvent, nil
+//}
+
+func (out *dingTalkApiOutput) serializeTextMsgType(event *publisher.Event) ([]byte, error) {
+	var err error
+	textMsg := defaultTextMsg
+	if out.conf.At.AtUserIds != nil || out.conf.At.AtMobiles != nil {
+		textMsg.At = out.conf.At
 	}
-	serializedEvent, err := json.Marshal(&fields)
+	textMsg.Text.Content, err = event.Content.Fields.GetValue("Msg")
+	if err != nil {
+		out.log.Warnf("Read event's message error: %v", err)
+		return make([]byte, 0), err
+	}
+	serializedEvent, err := json.Marshal(&textMsg)
 	if err != nil {
 		out.log.Error("Serialization error: ", err)
 		return make([]byte, 0), err
@@ -185,16 +197,7 @@ func (out *httpOutput) serializeOnlyFields(event *publisher.Event) ([]byte, erro
 	return serializedEvent, nil
 }
 
-func (out *httpOutput) serializeAll(event *publisher.Event) ([]byte, error) {
-	serializedEvent, err := out.codec.Encode(out.beat.Beat, &event.Content)
-	if err != nil {
-		out.log.Error("Serialization error: ", err)
-		return make([]byte, 0), err
-	}
-	return serializedEvent, nil
-}
-
-func (out *httpOutput) Publish(_ context.Context, batch publisher.Batch) error {
+func (out *dingTalkApiOutput) Publish(_ context.Context, batch publisher.Batch) error {
 	st := out.observer
 	events := batch.Events()
 	st.NewBatch(len(events))
@@ -224,9 +227,9 @@ func (out *httpOutput) Publish(_ context.Context, batch publisher.Batch) error {
 
 		if err = out.send(serializedEvent); err != nil {
 			if event.Guaranteed() {
-				out.log.Errorf("Writing event to http failed with: %+v", err)
+				out.log.Errorf("Writing event to dingTalk robot api failed with: %+v", err)
 			} else {
-				out.log.Warnf("Writing event to http failed with: %+v", err)
+				out.log.Warnf("Writing event to dingTalk robot api failed with: %+v", err)
 			}
 
 			batch.RetryEvents(events)
@@ -240,11 +243,11 @@ func (out *httpOutput) Publish(_ context.Context, batch publisher.Batch) error {
 	return nil
 }
 
-func (out *httpOutput) String() string {
-	return "http(" + out.conf.URL + ")"
+func (out *dingTalkApiOutput) String() string {
+	return "dingTalkApi(" + out.conf.URL + ")"
 }
 
-func (out *httpOutput) send(data []byte) error {
+func (out *dingTalkApiOutput) send(data []byte) error {
 
 	req, err := out.getReq(data)
 	if err != nil {
@@ -255,6 +258,16 @@ func (out *httpOutput) send(data []byte) error {
 	resp, err := out.client.Do(req)
 	if err != nil {
 		return err
+	}
+
+	respBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		out.log.Warnf("Read response result error: %v", err)
+	}
+
+	if len(respBody) > 0 {
+		respBodyStr := string(respBody)
+		out.log.Info(respBodyStr)
 	}
 
 	err = resp.Body.Close()
@@ -269,17 +282,21 @@ func (out *httpOutput) send(data []byte) error {
 	return nil
 }
 
-func (out *httpOutput) getReq(data []byte) (*http.Request, error) {
+func (out *dingTalkApiOutput) getReq(data []byte) (*http.Request, error) {
 	tmp := out.reqPool.Get()
 
 	req, ok := tmp.(*http.Request)
 	if ok {
 		buf := bytes.NewBuffer(data)
 		req.Body = ioutil.NopCloser(buf)
+		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "beat "+out.beat.Version)
-		if out.conf.Username != "" {
-			req.SetBasicAuth(out.conf.Username, out.conf.Password)
-		}
+		//if out.conf.Username != "" {
+		//	req.SetBasicAuth(out.conf.Username, out.conf.Password)
+		//}
+		params := req.URL.Query()
+		params.Set("access_token", out.conf.ApiAccessToken)
+		req.URL.RawQuery = params.Encode()
 		return req, nil
 	}
 
@@ -291,6 +308,6 @@ func (out *httpOutput) getReq(data []byte) (*http.Request, error) {
 	return nil, errors.New("pool assertion error")
 }
 
-func (out *httpOutput) putReq(req *http.Request) {
+func (out *dingTalkApiOutput) putReq(req *http.Request) {
 	out.reqPool.Put(req)
 }

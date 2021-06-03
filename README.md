@@ -1,9 +1,9 @@
-[![License](http://img.shields.io/badge/license-mit-blue.svg)](https://raw.githubusercontent.com/crazygreenpenguin/beats-output-http/master/LICENSE)
-[![Build Status](https://travis-ci.org/crazygreenpenguin/beats-output-http.svg?branch=master)](https://travis-ci.com/crazygreenpenguin/beats-output-http)
-[![Go Report Card](https://goreportcard.com/badge/github.com/crazygreenpenguin/beats-output-http)](https://goreportcard.com/report/github.com/crazygreenpenguin/beats-output-http)
-# beats-output-http
+[![License](http://img.shields.io/badge/license-mit-blue.svg)](https://github.com/ClessLi/beats-output-ding-talk-api/master/LICENSE)
+[![Build Status](https://travis-ci.org/ClessLi/beats-output-ding-talk-api.svg?branch=master)](https://github.com/ClessLi/beats-output-ding-talk-api)
+[![Go Report Card](https://goreportcard.com/badge/github.com/crazygreenpenguin/beats-output-http)](https://goreportcard.com/report/github.com/ClessLi/beats-output-ding-talk-api)
+# beats-output-ding-talk-api
 HTTP output producer for the Elastic Beats framework
-beats-output-http. Output for the Elastic Beats platform that simply
+beats-output-ding-talk-api. Output for the Elastic Beats platform that simply
 POSTs events to an HTTP endpoint.
 
 Compatibilities
@@ -29,7 +29,7 @@ package main
 
 import (
 	"os"
-	_ "github.com/crazygreenpenguin/beats-output-http"
+	_ "github.com/ClessLi/beats-output-ding-talk-api"
 	"github.com/elastic/beats/v7/filebeat/cmd"
 )
 
@@ -49,15 +49,11 @@ Then configure the http output plugin in filebeat.yaml:
 
 ```yaml
 output.http:
-  only_fields: true
-  # only fields set force json codec for body and send
-  # only Fields content, no @metadata (from version 0.0.7 @timestamp saving)
-  # default=false
   add_fields:
     field1: 123
     field2: "fedggd"
   #add fields in out message, only if only_fields = true from v0.0.7
-  url: 'http://some.example.com:80/foo'
+  url: 'https://oapi.dingtalk.com/robot/send'
   # URL for sending POST request
   max_retries: -1
   # How many retry fail send: -1=infinite, 0=no retry, default=-1
@@ -73,13 +69,24 @@ output.http:
   # connection will remain idle before closing itself.
   # Zero means no limit
   # Default=0
-  response_header_timeout: 100
+  response_header_timeout: 3000
   # Specifies the amount of time in milliseconds to wait for a server's response
   # headers after fully writing the request (including its body, if any).
   # This time does not include the time to read the response body.
-  # default=100ms
-  username: 'test'
-  # Basic Auth username if empty or none Authorization header not set
-  password: 'password'
-  # Basic Auth password if auth set. If auth set^ can't be empty!
+  # default=3000ms
+  api_access_token: 'test_tokenxxxxx'
+  # Required, dingTalk robot webhook api access token
+  # at:
+  # Users assigned to view
+    # at_mobiles:
+    #   - '13600000000'
+    # The mobile phones number of the person being @ used
+    # at_user_ids:
+    #   - 'clessli'
+    # User IDs of the @ person
+    # is_at_all: true
+    # Whether @ everyone
+  send_msg_type: 'text'
+  # Message types pushed to API
+  # Default=text
 ```
