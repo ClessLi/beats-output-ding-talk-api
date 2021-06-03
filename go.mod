@@ -1,6 +1,6 @@
 module github.com/ClessLi/beats-output-ding-talk-api
 
-go 1.14
+go 1.16
 
 require (
 	github.com/elastic/beats/v7 v7.13.1
